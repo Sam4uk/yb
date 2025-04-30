@@ -1,0 +1,74 @@
+name: yb package maker
+
+on:
+  push:
+    branches: ["main"]
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  # Build job
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      # - uses: actions/configure-pages@v3
+      #   with:
+      #     token: ${{ secrets.SECRET_1 }}
+      #     enablement: true  # Change this to true to enable Pages
+      
+      - name: make Debian Package
+        run: |
+          echo "                     Begin"
+          version_number="0.9"
+          timestamp=$(date +"%Y%m%d%H%M%S")
+          ./src/tools/build.sh "${version_number}" "${timestamp}"
+          mkdir -p "./yb-${version_number}/usr/local/bin/"
+          mkdir -p "./yb-${version_number}/DEBIAN/"
+          cp "./yb" "./yb-${version_number}/usr/local/bin/"
+          chmod o+x "./yb-${version_number}/usr/local/bin/yb"
+          echo "Package: yb" > "./yb-${version_number}/DEBIAN/control"
+          echo "Version: ${version_number}.${timestamp}" >> "./yb-${version_number}/DEBIAN/control"
+          echo "Section: custom" >> "./yb-${version_number}/DEBIAN/control"
+          echo "Architecture: all" >> "./yb-${version_number}/DEBIAN/control"
+          echo "Maintainer: t0pd4wn" >> "./yb-${version_number}/DEBIAN/control"
+          echo "Description: bash yaml parser" >> "./yb-${version_number}/DEBIAN/control"
+          echo "Depends: bash" >> "./yb-${version_number}/DEBIAN/control"
+          dpkg-deb --root-owner-group --build "./yb-${version_number}" "./yb-${version_number}-0.deb"
+          rm -fr "./yb-${version_number}" "./tests" "./src" "./dist"
+          echo "END"
+
+      - name: Build with Jekyll
+        uses: actions/jekyll-build-pages@v1
+        with:
+          source: ./
+          destination: ./_site
+
+          
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./_site
+      - run: tree
+
+  # Deployment job
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
